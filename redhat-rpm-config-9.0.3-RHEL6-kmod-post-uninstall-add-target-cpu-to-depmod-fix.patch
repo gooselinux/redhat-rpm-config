@@ -1,0 +1,12 @@
+diff -urNp redhat-rpm-config-9.0.3_orig/kmodtool redhat-rpm-config-9.0.3/kmodtool
+--- redhat-rpm-config-9.0.3_orig/kmodtool	2010-06-29 15:54:33.245115991 -0400
++++ redhat-rpm-config-9.0.3/kmodtool	2010-06-29 16:28:51.395268877 -0400
+@@ -138,7 +138,7 @@ EOF
+ cat <<EOF
+ %postun        -n kmod-${kmod_name}${dashvariant}
+ if [ -e "/boot/System.map-${verrel}.%{_target_cpu}${dotvariant}" ]; then
+-    /sbin/depmod -aeF "/boot/System.map-${verrel}.%{_target_cpu}${dotvariant}" "${verrel}${variant}" > /dev/null || :
++    /sbin/depmod -aeF "/boot/System.map-${verrel}.%{_target_cpu}${dotvariant}" "${verrel}.%{_target_cpu}${dotvariant}" > /dev/null || :
+ fi
+ 
+ modules=( \$(cat /var/run/rpm-kmod-${kmod_name}${dashvariant}-modules) )

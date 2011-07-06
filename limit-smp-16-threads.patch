@@ -1,0 +1,13 @@
+diff -up redhat-rpm-config-9.0.3/macros.orig redhat-rpm-config-9.0.3/macros
+--- redhat-rpm-config-9.0.3/macros.orig	2008-05-06 19:08:20.000000000 -0400
++++ redhat-rpm-config-9.0.3/macros	2009-06-03 15:00:28.000000000 -0400
+@@ -67,7 +67,8 @@
+ 
+ %_smp_mflags %([ -z "$RPM_BUILD_NCPUS" ] \\\
+ 	&& RPM_BUILD_NCPUS="`/usr/bin/getconf _NPROCESSORS_ONLN`"; \\\
+-	[ "$RPM_BUILD_NCPUS" -gt 1 ] && echo "-j$RPM_BUILD_NCPUS")
++        if [ "$RPM_BUILD_NCPUS" -gt 16 ]; then echo "-j16"; \\\
++        elif [ "$RPM_BUILD_NCPUS" -gt 1 ]; then echo "-j$RPM_BUILD_NCPUS"; fi)
+ 
+ #==============================================================================
+ # ---- Build policy macros.

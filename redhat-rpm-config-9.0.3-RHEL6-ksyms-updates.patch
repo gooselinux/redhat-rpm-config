@@ -1,0 +1,351 @@
+diff -urNp redhat-rpm-config-9.0.3_orig/find-requires redhat-rpm-config-9.0.3/find-requires
+--- redhat-rpm-config-9.0.3_orig/find-requires	2010-03-28 18:54:36.899515402 -0400
++++ redhat-rpm-config-9.0.3/find-requires	2010-03-28 18:54:55.644518843 -0400
+@@ -153,8 +153,7 @@ for f in $filelist; do
+     fi
+ done
+ 
+-# Disabling for now while the Fedora kernel doesn't produce kABI deps.
+-#[ -x /usr/lib/rpm/redhat/find-requires.ksyms ] && [ "$is_kmod" ] &&
+-#    printf "%s\n" "${filelist[@]}" | /usr/lib/rpm/redhat/find-requires.ksyms
++[ -x /usr/lib/rpm/redhat/find-requires.ksyms ] && [ "$is_kmod" ] &&
++    printf "%s\n" "${filelist[@]}" | /usr/lib/rpm/redhat/find-requires.ksyms
+ 
+ exit 0
+diff -urNp redhat-rpm-config-9.0.3_orig/find-requires.ksyms redhat-rpm-config-9.0.3/find-requires.ksyms
+--- redhat-rpm-config-9.0.3_orig/find-requires.ksyms	2008-05-06 19:08:20.000000000 -0400
++++ redhat-rpm-config-9.0.3/find-requires.ksyms	2010-03-28 18:54:55.682527162 -0400
+@@ -4,7 +4,7 @@ IFS=$'\n'
+ 
+ all_provides() {
+     nm "$@" \
+-    | sed -r -ne 's:^0*([0-9a-f]+) A __crc_(.+):\1\t\2:p' \
++    | sed -r -ne 's:^([0-9a-f]+) A __crc_(.+):\1\t\2:p' \
+     | sort -k2 -u
+ }
+ 
+@@ -12,7 +12,10 @@ all_requires() {
+     for module in "$@"; do
+         set -- $(/sbin/modinfo -F vermagic "$module" | sed -e 's: .*::' -e q)
+         /sbin/modprobe --dump-modversions "$module" \
+-        | sed -r -e 's:^0x0*::' -e 's:$:\t'"$1"':'
++        | awk --non-decimal-data '
++            BEGIN { FS = "\t" ; OFS = "\t" }
++            {printf("0x%08x\t%s\n", $1, $2)}' \
++        | sed -r -e 's:$:\t'"$1"':'
+     done \
+     | sort -k2 -u
+ }
+@@ -24,25 +27,26 @@ fi
+ 
+ modules=($(grep -E '/lib/modules/.+\.ko$'))
+ if [ ${#modules[@]} -gt 0 ]; then
+-    symset_table=$(mktemp -t ${0##*/}.XXXXX)
+-    /usr/lib/rpm/redhat/symset-table | sort > $symset_table
++    kernel=$(/sbin/modinfo -F vermagic "${modules[0]}" | sed -e 's: .*::' -e q)
++    symvers=$(mktemp -t ${0##*/}.XXXXX)
++    cat /usr/src/kernels/$kernel/Module.symvers | awk '
++        BEGIN { FS = "\t" ; OFS = "\t" }
++        { print $2 "\t" $1 }
++    ' \
++    | sed -r -e 's:$:\t'"$1"':' \
++    | sort -u > $symvers
+ 
+-    join -t $'\t' -j 1 -a 2 $symset_table <(
++    join -t '\t' -j 1 -a 2 $symvers <(
+         # Filter out requirements that we fulfill ourself.
+         join -t $'\t' -j 2 -v 1 \
+             <(all_requires "${modules[@]}") \
+             <(all_provides "${modules[@]}") \
+-        | awk '
+-        BEGIN { FS = "\t" ; OFS = "\t" }
+-        { print $3 "/" $2 "/" $1 }
+-        ' \
+         | sort -u) \
+     | sort -u \
+     | awk '
+     { FS = "\t" ; OFS = "\t" }
+-    NF == 3 { print "kernel(" $2 ") = " $3
++    NF == 3 { print "kernel(" $1 ") = " $2
+               next }
+-            { split($1, arr, "/")
+-              print "ksym(" arr[3] ") = " arr[2] }
++            { print "ksym(" $1 ") = " $2 }
+     '
+ fi
+diff -urNp redhat-rpm-config-9.0.3_orig/kmodtool redhat-rpm-config-9.0.3/kmodtool
+--- redhat-rpm-config-9.0.3_orig/kmodtool	2008-05-06 19:08:20.000000000 -0400
++++ redhat-rpm-config-9.0.3/kmodtool	2010-03-28 18:56:17.270516979 -0400
+@@ -1,7 +1,7 @@
+ #!/bin/bash
+ 
+ # kmodtool - Helper script for building kernel module RPMs
+-# Copyright (c) 2003-2006 Ville Skyttä <ville.skytta@iki.fi>,
++# Copyright (c) 2003-2010 Ville Skyttä <ville.skytta@iki.fi>,
+ #                         Thorsten Leemhuis <fedora@leemhuis.info>
+ #                         Jon Masters <jcm@redhat.com>
+ #
+@@ -24,16 +24,20 @@
+ # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+ # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ 
++# Changelog:
++#            2010/01/10 - Simplified for RHEL6. We are working on upstream
++#                         moving to a newer format and in any case do not
++#                         need to retain support for really old systems.
++
+ shopt -s extglob
+ 
+ myprog="kmodtool"
+-myver="0.10.10_kmp2"
+-knownvariants=@(BOOT|PAE|@(big|huge)mem|debug|enterprise|kdump|?(large)smp|uml|xen[0U]?(-PAE)|xen)
++myver="rhel6-rh1"
++knownvariants=@(debug|kdump|framepointer)
+ kmod_name=
+ kver=
+ verrel=
+ variant=
+-kmp=
+ 
+ get_verrel ()
+ {
+@@ -65,113 +69,94 @@ get_rpmtemplate ()
+ {
+     local variant="${1}"
+     local dashvariant="${variant:+-${variant}}"
+-    case "$verrel" in
+-        *.el*) kdep="kernel${dashvariant}-%{_target_cpu} = ${verrel}" ;;
+-        *.EL*) kdep="kernel${dashvariant}-%{_target_cpu} = ${verrel}" ;;
+-        *)     kdep="kernel-%{_target_cpu} = ${verrel}${variant}"     ;;
+-    esac
++    local dotvariant="${variant:+.${variant}}"
+ 
+     echo "%package       -n kmod-${kmod_name}${dashvariant}"
+ 
+-    if [ -z "$kmp_provides_summary" ]; then
++    if [ -z "$kmod_provides_summary" ]; then
+         echo "Summary:          ${kmod_name} kernel module(s)"
+     fi
+ 
+-    if [ -z "$kmp_provides_group" ]; then
++    if [ -z "$kmod_provides_group" ]; then
+         echo "Group:            System Environment/Kernel"
+     fi
+ 
+-    if [ ! -z "$kmp_version" ]; then
+-        echo "Version: %{kmp_version}"
++    if [ ! -z "$kmod_version" ]; then
++        echo "Version: %{kmod_version}"
+     fi
+ 
+-    if [ ! -z "$kmp_release" ]; then
+-        echo "Release: %{kmp_release}"
++    if [ ! -z "$kmod_release" ]; then
++        echo "Release: %{kmod_release}"
+     fi
+     
+-    if [ ! -z "$kmp" ]; then
+-        echo "%global _use_internal_dependency_generator 0"
+-    fi
++    # Turn of the internal dep generator so we will use the kmod scripts.
++    echo "%global _use_internal_dependency_generator 0"
+     
+     cat <<EOF
+-Provides:         kernel-modules = ${verrel}${variant}
++Provides:         kernel-modules = ${verrel}.%{_target_cpu}${dotvariant}
+ Provides:         ${kmod_name}-kmod = %{?epoch:%{epoch}:}%{version}-%{release}
+-EOF
+-    
+-    if [ -z "$kmp" ]; then
+-        echo "Requires:         ${kdep}"
+-    fi
+-
+-#
+-# RHEL5 - Remove common package requirement on general kmod packages.
+-# Requires: ${kmod_name}-kmod-common >= %{?epoch:%{epoch}:}%{version}
+-#
+-
+-    cat <<EOF
+ Requires(post):   /sbin/depmod
+ Requires(postun): /sbin/depmod
+ EOF
+ 
+-if [ "no" != "$kmp_nobuildreqs" ]
++if [ "no" != "$nobuildreqs" ]
+ then
+-    echo "BuildRequires: kernel${dashvariant}-devel-%{_target_cpu} = ${verrel}"
++    echo "BuildRequires: kernel-devel-uname-r = ${verrel}.%{_target_cpu}${dotvariant}"
+ fi
+ 
+-if [ "" != "$kmp_override_preamble" ]
++if [ "" != "$override_preamble" ]
+ then
+-    cat "$kmp_override_preamble"
++    cat "$override_preamble"
+ fi
+ 
+ cat <<EOF
+ %description   -n kmod-${kmod_name}${dashvariant}
+-This package provides the ${kmod_name} kernel modules built for the Linux
+-kernel ${verrel}${variant} for the %{_target_cpu} family of processors.
++This package provides the ${kmod_name} kernel modules built for
++the Linux kernel ${verrel}${dotvariant} for the %{_target_cpu}
++family of processors.
++EOF
++
++cat <<EOF
+ %post          -n kmod-${kmod_name}${dashvariant}
+-if [ -e "/boot/System.map-${verrel}${variant}" ]; then
+-    /sbin/depmod -aeF "/boot/System.map-${verrel}${variant}" "${verrel}${variant}" > /dev/null || :
++if [ -e "/boot/System.map-${verrel}.%{_target_cpu}${dotvariant}" ]; then
++    /sbin/depmod -aeF "/boot/System.map-${verrel}.%{_target_cpu}${dotvariant}" "${verrel}.%{_target_cpu}${dotvariant}" > /dev/null || :
+ fi
+-EOF
+-    
+-    if [ ! -z "$kmp" ]; then
+-        cat <<EOF
+ 
+-modules=( \$(find /lib/modules/${verrel}${variant}/extra/${kmod_name}) )
++modules=( \$(find /lib/modules/${verrel}.%{_target_cpu}${dotvariant}/extra/${kmod_name} | grep '\.ko$') )
+ if [ -x "/sbin/weak-modules" ]; then
+     printf '%s\n' "\${modules[@]}" \
+     | /sbin/weak-modules --add-modules
+ fi
++EOF
++
++cat <<EOF
+ %preun         -n kmod-${kmod_name}${dashvariant}
+ rpm -ql kmod-${kmod_name}${dashvariant} | grep '\.ko$' \
+     > /var/run/rpm-kmod-${kmod_name}${dashvariant}-modules
+ EOF
+         
+-    fi
+-    
+-    cat <<EOF
++cat <<EOF
+ %postun        -n kmod-${kmod_name}${dashvariant}
+-/sbin/depmod -aF /boot/System.map-${verrel}${variant} ${verrel}${variant} &> /dev/null || :
+-EOF
+-    
+-    if [ ! -z "$kmp" ]; then
+-        cat <<EOF
++if [ -e "/boot/System.map-${verrel}.%{_target_cpu}${dotvariant}" ]; then
++    /sbin/depmod -aeF "/boot/System.map-${verrel}.%{_target_cpu}${dotvariant}" "${verrel}${variant}" > /dev/null || :
++fi
++
+ modules=( \$(cat /var/run/rpm-kmod-${kmod_name}${dashvariant}-modules) )
+-#rm /var/run/rpm-kmod-${kmod_name}${dashvariant}-modules
++rm /var/run/rpm-kmod-${kmod_name}${dashvariant}-modules
+ if [ -x "/sbin/weak-modules" ]; then
+     printf '%s\n' "\${modules[@]}" \
+     | /sbin/weak-modules --remove-modules
+ fi
+ EOF
+-    fi
+ 
+ echo "%files         -n kmod-${kmod_name}${dashvariant}"
+ 
+-if [ "" == "$kmp_override_filelist" ];
++if [ "" == "$override_filelist" ];
+ then
+     echo "%defattr(644,root,root,755)"
+-    echo "/lib/modules/${verrel}${variant}/"
+-    echo "/lib/firmware/"
++    echo "/lib/modules/${verrel}.%{_target_cpu}${dotvariant}"
+ else
+-    cat "$kmp_override_filelist"
++    cat "$override_filelist"
+ fi
+ }
+ 
+@@ -216,8 +201,6 @@ Usage: ${myprog} <command> <option>+
+     - Get variant from uname.
+   rpmtemplate <mainpgkname> <uname> <variants> 
+     - Return a template for use in a source RPM
+-  rpmtemplate_kmp <mainpgkname> <uname> <variants>
+-    - Return a template for use in a source RPM with KMP dependencies
+   version  
+     - Output version number and exit.
+ EOF
+@@ -241,12 +224,6 @@ while [ "${1}" ] ; do
+       print_rpmtemplate "$@"
+       exit $?
+       ;;
+-    rpmtemplate_kmp)
+-      shift
+-      kmp=1
+-      print_rpmtemplate "$@"
+-      exit $?
+-      ;;
+     version)
+       echo "${myprog} ${myver}"
+       exit 0
+diff -urNp redhat-rpm-config-9.0.3_orig/macros redhat-rpm-config-9.0.3/macros
+--- redhat-rpm-config-9.0.3_orig/macros	2010-03-28 18:54:37.020515458 -0400
++++ redhat-rpm-config-9.0.3/macros	2010-03-28 18:56:17.297516655 -0400
+@@ -185,8 +185,8 @@ unset DISPLAY\
+ %_hkp_keyserver  %{nil}
+ 
+ # Use these macros to differentiate between RH and other KMP implementation(s).
+-redhat_kernel_module_package	1
+-kernel_module_package_release	1
++%global redhat_kernel_module_package	1
++%global kernel_module_package_release	1
+ 
+ #kernel_module_package [ -n name ] [ -v version ] [ -r release ] [ -s script ]
+ #                      [ -f filelist] [ -x ] [ -p preamble ] flavor flavor ...
+@@ -195,40 +195,26 @@ kernel_module_package_release	1
+ 					kernel-devel
+ 
+ %kernel_module_package(n:v:r:s:f:xp:) %{expand:%( \
+-	%define kmodtool %{-s*}%{!-s:/usr/lib/rpm/redhat/kmodtool} \
+-	%define kmp_version %{-v*}%{!-v:%{version}} \
+-	%define kmp_release %{-r*}%{!-r:%{release}} \
+-	%define latest_kernel %(rpm -q --qf '%{VERSION}-%{RELEASE}\\\\n' `rpm -q kernel-devel | /usr/lib/rpm/redhat/rpmsort -r | head -n 1` | head -n 1) \
++	%global kmodtool %{-s*}%{!-s:/usr/lib/rpm/redhat/kmodtool} \
++	%global kmod_version %{-v*}%{!-v:%{version}} \
++	%global kmod_release %{-r*}%{!-r:%{release}} \
++	%global latest_kernel %(rpm -q --qf '%{VERSION}-%{RELEASE}\\\\n' `rpm -q kernel-devel | /usr/lib/rpm/redhat/rpmsort -r | head -n 1` | head -n 1) \
+ 	%{!?kernel_version:%{expand:%%global kernel_version %{latest_kernel}}} \
+ 	%global kverrel %(%{kmodtool} verrel %{?kernel_version} 2>/dev/null) \
+ 	flavors="default" \
+-	if [ "i686" == "%{_target_cpu}" ] || [ "x86_64" == "%{_target_cpu}" ] \
+-	then \
+-		xenver=$(rpm -q kernel-xen-devel-%{kverrel}|head -n 1)\
+-		kdver=$(rpm -q kernel-kdump-devel-%{kverrel}|head -n 1)\
+-		if [ "kernel-xen-devel-%{kverrel}" == "$xenver" ] \
+-		then \
+-			flavors="$flavors xen" \
+-		fi \
+-		if [ "kernel-kdump-devel-%{kverrel}" == "$kdver" ] \
+-		then \
+-			flavors="$flavors kdump" \
+-		fi \
+-	fi \
+ 	if [ -z "%*" ]; then \
+ 		flavors_to_build=$flavors \
+ 	elif [ -z "%{-x}" ]; then \
+ 		flavors_to_build="%*" \
+ 	else \
+ 		flavors_to_build=" $flavors "\
+-		echo "[$flavors_to_build]" >/tmp/tmp.txt
+ 		for i in %* \
+ 		do \
+ 			flavors_to_build=${flavors_to_build//$i /}
+ 		done \
+ 	fi \
+ 	echo "%%global flavors_to_build ${flavors_to_build:-%%nil}" \
+-	echo "%%global kernel_source() /usr/src/kernels/%kverrel-\\\$([ %%%%{1} = default ] || echo "%%%%{1}-")%_target_cpu" \
++	echo "%%global kernel_source() /usr/src/kernels/%kverrel.%{_target_cpu}\\\$([ %%%%{1} = default ] || echo ".%%%%{1}")" \
+ 	if [ ! -z "%{-f*}" ] \
+ 	then \
+ 		filelist="%{-f*}" \
+@@ -241,7 +227,7 @@ kernel_module_package_release	1
+ 	then \
+ 		nobuildreqs="yes" \
+ 	fi \
+-	kmp_override_filelist="$filelist" kmp_override_preamble="$preamble" kmp_nobuildreqs="$buildreqs" %{kmodtool} rpmtemplate_kmp %{-n*}%{!-n:%name} %{kverrel} $flavors_to_build 2>/dev/null \
++	override_filelist="$filelist" override_preamble="$preamble" nobuildreqs="$buildreqs" %{kmodtool} rpmtemplate %{-n*}%{!-n:%name} %{kverrel} $flavors_to_build 2>/dev/null \
+ )}
+ 
+ #==============================================================================

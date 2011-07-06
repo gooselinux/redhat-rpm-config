@@ -1,0 +1,20 @@
+commit afe45959fba91d9d693c8d7502d30917aa032850
+Author: Panu Matilainen <pmatilai@redhat.com>
+Date:   Fri Jan 22 10:59:42 2010 +0200
+
+    Dont try to repack empty JAR's (#269481, #547699)
+    - patch originally from Kai Bolay
+
+diff --git a/brp-java-repack-jars b/brp-java-repack-jars
+index 9f295d7..bec752a 100755
+--- a/brp-java-repack-jars
++++ b/brp-java-repack-jars
+@@ -13,7 +13,7 @@ if [ ! -x /usr/bin/unzip ]; then
+ 	exit 0
+ fi
+ 
+-JARS=`find $RPM_BUILD_ROOT -type f -name \*.jar`
++JARS=`find $RPM_BUILD_ROOT -type f -name \*.jar -not -size 0`
+ if [ ! -z "$JARS" ]; then 
+ 	
+ 	# make $RPM_BUILD_ROOT/tmp if it doesn't exist

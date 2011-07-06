@@ -1,0 +1,171 @@
+diff -urNp redhat-rpm-config-9.0.3_orig/kmodtool redhat-rpm-config-9.0.3/kmodtool
+--- redhat-rpm-config-9.0.3_orig/kmodtool	2010-07-28 10:51:47.527651400 -0400
++++ redhat-rpm-config-9.0.3/kmodtool	2010-07-28 10:53:07.555428397 -0400
+@@ -1,6 +1,11 @@
+ #!/bin/bash
+ 
+ # kmodtool - Helper script for building kernel module RPMs
++#            An original version appeared in Fedora. This version is
++#            generally called only by the %kernel_module_package RPM macro
++#            during the process of building Driver Update Packages (which
++#            are also known as "kmods" in the Fedora community).
++#
+ # Copyright (c) 2003-2010 Ville Skyttä <ville.skytta@iki.fi>,
+ #                         Thorsten Leemhuis <fedora@leemhuis.info>
+ #                         Jon Masters <jcm@redhat.com>
+@@ -25,6 +30,11 @@
+ # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ 
+ # Changelog:
++#
++#            2010/07/28 - Add fixes for filelists in line with LF standard
++#			- Remove now defunct "framepointer" kernel variant
++#			- Change version to "rhel6-rh2" as a consequence.
++#
+ #            2010/01/10 - Simplified for RHEL6. We are working on upstream
+ #                         moving to a newer format and in any case do not
+ #                         need to retain support for really old systems.
+@@ -32,8 +42,8 @@
+ shopt -s extglob
+ 
+ myprog="kmodtool"
+-myver="rhel6-rh1"
+-knownvariants=@(debug|kdump|framepointer)
++myver="rhel6-rh2"
++knownvariants=@(debug|kdump)
+ kmod_name=
+ kver=
+ verrel=
+@@ -65,6 +75,32 @@ print_variant ()
+   echo "${variant}"
+ }
+ 
++get_filelist() {
++	local IFS=$'\n'
++	filelist=($(cat))
++
++	if [ ${#filelist[@]} -gt 0 ];
++	then
++		for ((n = 0; n < ${#filelist[@]}; n++));
++		do
++			line="${filelist[n]}"
++			line=$(echo "$line" \
++				| sed -e "s/%verrel/$verrel/g" \
++				| sed -e "s/%variant/$variant/g" \
++				| sed -e "s/%dashvariant/$dashvariant/g" \
++				| sed -e "s/%dotvariant/$dotvariant/g" \
++				| sed -e "s/\.%1/$dotvariant/g" \
++				| sed -e "s/\-%1/$dotvariant/g" \
++				| sed -e "s/%2/$verrel/g")
++			echo "$line"
++		done
++	else
++		echo "%defattr(644,root,root,755)"
++		echo "/lib/modules/${verrel}${dotvariant}"
++	fi
++}
++	
++
+ get_rpmtemplate ()
+ {
+     local variant="${1}"
+@@ -91,23 +127,23 @@ get_rpmtemplate ()
+     
+     # Turn of the internal dep generator so we will use the kmod scripts.
+     echo "%global _use_internal_dependency_generator 0"
+-    
++
+     cat <<EOF
+-Provides:         kernel-modules = ${verrel}.%{_target_cpu}${dotvariant}
++Provides:         kernel-modules = ${verrel}${dotvariant}
+ Provides:         ${kmod_name}-kmod = %{?epoch:%{epoch}:}%{version}-%{release}
+ Requires(post):   /sbin/depmod
+ Requires(postun): /sbin/depmod
+ EOF
+ 
+-if [ "no" != "$nobuildreqs" ]
+-then
+-    echo "BuildRequires: kernel${dashvariant}-devel"
+-fi
++    if [ "no" != "$nobuildreqs" ]
++    then
++        echo "BuildRequires: kernel${dashvariant}-devel"
++    fi
+ 
+-if [ "" != "$override_preamble" ]
+-then
+-    cat "$override_preamble"
+-fi
++    if [ "" != "$override_preamble" ]
++    then
++        cat "$override_preamble"
++    fi
+ 
+ cat <<EOF
+ %description   -n kmod-${kmod_name}${dashvariant}
+@@ -116,13 +152,18 @@ the Linux kernel ${verrel}${dotvariant} 
+ family of processors.
+ EOF
+ 
++##############################################################################
++## The following are not part of this script directly, they are scripts     ##
++## that will be executed by RPM during various stages of package processing ##
++##############################################################################
++
+ cat <<EOF
+ %post          -n kmod-${kmod_name}${dashvariant}
+-if [ -e "/boot/System.map-${verrel}.%{_target_cpu}${dotvariant}" ]; then
+-    /sbin/depmod -aeF "/boot/System.map-${verrel}.%{_target_cpu}${dotvariant}" "${verrel}.%{_target_cpu}${dotvariant}" > /dev/null || :
++if [ -e "/boot/System.map-${verrel}${dotvariant}" ]; then
++    /sbin/depmod -aeF "/boot/System.map-${verrel}${dotvariant}" "${verrel}${dotvariant}" > /dev/null || :
+ fi
+ 
+-modules=( \$(find /lib/modules/${verrel}.%{_target_cpu}${dotvariant}/extra/${kmod_name} | grep '\.ko$') )
++modules=( \$(find /lib/modules/${verrel}${dotvariant}/extra/${kmod_name} | grep '\.ko$') )
+ if [ -x "/sbin/weak-modules" ]; then
+     printf '%s\n' "\${modules[@]}" \
+     | /sbin/weak-modules --add-modules
+@@ -137,8 +178,8 @@ EOF
+         
+ cat <<EOF
+ %postun        -n kmod-${kmod_name}${dashvariant}
+-if [ -e "/boot/System.map-${verrel}.%{_target_cpu}${dotvariant}" ]; then
+-    /sbin/depmod -aeF "/boot/System.map-${verrel}.%{_target_cpu}${dotvariant}" "${verrel}.%{_target_cpu}${dotvariant}" > /dev/null || :
++if [ -e "/boot/System.map-${verrel}${dotvariant}" ]; then
++    /sbin/depmod -aeF "/boot/System.map-${verrel}${dotvariant}" "${verrel}${dotvariant}" > /dev/null || :
+ fi
+ 
+ modules=( \$(cat /var/run/rpm-kmod-${kmod_name}${dashvariant}-modules) )
+@@ -154,9 +195,9 @@ echo "%files         -n kmod-${kmod_name
+ if [ "" == "$override_filelist" ];
+ then
+     echo "%defattr(644,root,root,755)"
+-    echo "/lib/modules/${verrel}.%{_target_cpu}${dotvariant}"
++    echo "/lib/modules/${verrel}${dotvariant}"
+ else
+-    cat "$override_filelist"
++    cat "$override_filelist" | get_filelist
+ fi
+ }
+ 
+diff -urNp redhat-rpm-config-9.0.3_orig/macros redhat-rpm-config-9.0.3/macros
+--- redhat-rpm-config-9.0.3_orig/macros	2010-07-28 10:51:47.484651560 -0400
++++ redhat-rpm-config-9.0.3/macros	2010-07-28 10:52:38.785276417 -0400
+@@ -198,7 +198,7 @@ unset DISPLAY\
+ 	%global kmodtool %{-s*}%{!-s:/usr/lib/rpm/redhat/kmodtool} \
+ 	%global kmod_version %{-v*}%{!-v:%{version}} \
+ 	%global kmod_release %{-r*}%{!-r:%{release}} \
+-	%global latest_kernel %(rpm -q --qf '%{VERSION}-%{RELEASE}\\\\n' `rpm -q kernel-devel | /usr/lib/rpm/redhat/rpmsort -r | head -n 1` | head -n 1) \
++	%global latest_kernel %(rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}\\\\n' `rpm -q kernel-devel | /usr/lib/rpm/redhat/rpmsort -r | head -n 1` | head -n 1) \
+ 	%{!?kernel_version:%{expand:%%global kernel_version %{latest_kernel}}} \
+ 	%global kverrel %(%{kmodtool} verrel %{?kernel_version} 2>/dev/null) \
+ 	flavors="default" \
+@@ -214,7 +214,7 @@ unset DISPLAY\
+ 		done \
+ 	fi \
+ 	echo "%%global flavors_to_build ${flavors_to_build:-%%nil}" \
+-	echo "%%global kernel_source() /usr/src/kernels/%kverrel.%{_target_cpu}\\\$([ %%%%{1} = default ] || echo ".%%%%{1}")" \
++	echo "%%global kernel_source() /usr/src/kernels/%kverrel\\\$([ %%%%{1} = default ] || echo ".%%%%{1}")" \
+ 	if [ ! -z "%{-f*}" ] \
+ 	then \
+ 		filelist="%{-f*}" \

@@ -1,0 +1,14 @@
+diff -urNp redhat-rpm-config-9.0.3_orig/macros redhat-rpm-config-9.0.3/macros
+--- redhat-rpm-config-9.0.3_orig/macros	2009-02-23 12:40:33.000000000 -0500
++++ redhat-rpm-config-9.0.3/macros	2009-02-23 12:47:04.000000000 -0500
+@@ -158,6 +158,10 @@ unset DISPLAY\
+ # Should unpackaged files in a build root terminate a build?
+ %_unpackaged_files_terminate_build    1
+ 
++# Use SHA-256 for FILEDIGESTS instead of default MD5
++%_source_filedigest_algorithm 8
++%_binary_filedigest_algorithm 8
++
+ %__find_provides        /usr/lib/rpm/redhat/find-provides
+ %__find_requires        /usr/lib/rpm/redhat/find-requires
+ 

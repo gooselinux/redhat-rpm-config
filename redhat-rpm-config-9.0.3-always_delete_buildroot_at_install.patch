@@ -1,0 +1,21 @@
+diff -up redhat-rpm-config-9.0.3/macros.BAD redhat-rpm-config-9.0.3/macros
+--- redhat-rpm-config-9.0.3/macros.BAD	2009-07-21 13:22:43.427201497 -0400
++++ redhat-rpm-config-9.0.3/macros	2009-07-21 13:23:57.692440712 -0400
+@@ -73,6 +73,17 @@
+ #==============================================================================
+ # ---- Build policy macros.
+ #
++#
++#---------------------------------------------------------------------
++#	Expanded at beginning of %install scriptlet.
++#
++
++%__spec_install_pre %{___build_pre}\
++    [ "$RPM_BUILD_ROOT" != "/" ] && rm -rf "${RPM_BUILD_ROOT}"\
++    mkdir -p `dirname "$RPM_BUILD_ROOT"`\
++    mkdir "$RPM_BUILD_ROOT"\
++%{nil}
++
+ #---------------------------------------------------------------------
+ #	Expanded at end of %install scriptlet.
+ #

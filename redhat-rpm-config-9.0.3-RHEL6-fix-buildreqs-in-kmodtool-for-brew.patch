@@ -1,0 +1,12 @@
+diff -urNp redhat-rpm-config-9.0.3_orig/kmodtool redhat-rpm-config-9.0.3/kmodtool
+--- redhat-rpm-config-9.0.3_orig/kmodtool	2010-06-30 12:27:05.952370030 -0400
++++ redhat-rpm-config-9.0.3/kmodtool	2010-06-30 12:28:07.037082493 -0400
+@@ -101,7 +101,7 @@ EOF
+ 
+ if [ "no" != "$nobuildreqs" ]
+ then
+-    echo "BuildRequires: kernel-devel-uname-r = ${verrel}.%{_target_cpu}${dotvariant}"
++    echo "BuildRequires: kernel${dashvariant}-devel"
+ fi
+ 
+ if [ "" != "$override_preamble" ]

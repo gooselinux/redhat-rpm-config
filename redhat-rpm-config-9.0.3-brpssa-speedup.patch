@@ -1,0 +1,12 @@
+diff -up redhat-rpm-config-9.0.3/brp-strip-static-archive.jx redhat-rpm-config-9.0.3/brp-strip-static-archive
+--- redhat-rpm-config-9.0.3/brp-strip-static-archive.jx	2008-05-06 19:08:20.000000000 -0400
++++ redhat-rpm-config-9.0.3/brp-strip-static-archive	2009-08-12 10:52:07.000000000 -0400
+@@ -8,7 +8,7 @@ fi
+ [ -z "$STRIP" ] && STRIP=strip
+ 
+ # Strip static libraries.
+-for f in `find $RPM_BUILD_ROOT -type f -a -exec file {} \; | \
++for f in `find $RPM_BUILD_ROOT -name \*.a -a -exec file {} \; | \
+         grep -v "^${RPM_BUILD_ROOT}/\?usr/lib/debug"  | \
+ 	grep 'current ar archive' | \
+ 	sed -n -e 's/^\(.*\):[ 	]*current ar archive/\1/p'`; do

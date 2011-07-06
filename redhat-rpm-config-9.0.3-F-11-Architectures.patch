@@ -1,0 +1,56 @@
+diff -Nur redhat-rpm-config-9.0.3-orig/rpmrc redhat-rpm-config-9.0.3/rpmrc
+--- redhat-rpm-config-9.0.3-orig/rpmrc	2008-05-06 18:08:20.000000000 -0500
++++ redhat-rpm-config-9.0.3/rpmrc	2009-02-17 14:38:12.000000000 -0600
+@@ -2,7 +2,7 @@
+ 
+ optflags: i386 %{__global_cflags} -m32 -march=i386 -mtune=generic -fasynchronous-unwind-tables
+ optflags: i486 %{__global_cflags} -m32 -march=i486 -fasynchronous-unwind-tables
+-optflags: i586 %{__global_cflags} -m32 -march=i586 -fasynchronous-unwind-tables
++optflags: i586 %{__global_cflags} -m32 -march=i586 -mtune=generic -fasynchronous-unwind-tables
+ optflags: i686 %{__global_cflags} -m32 -march=i686 -mtune=generic -fasynchronous-unwind-tables
+ optflags: athlon %{__global_cflags} -m32 -march=athlon -fasynchronous-unwind-tables
+ optflags: ia64 %{__global_cflags}
+@@ -18,7 +18,9 @@
+ optflags: sparc %{__global_cflags} -m32 -mcpu=v7 -mtune=ultrasparc
+ optflags: sparcv8 %{__global_cflags} -m32 -mcpu=v8
+ optflags: sparcv9 %{__global_cflags} -m32 -mcpu=ultrasparc
++optflags: sparcv9v %{__global_cflags} -m32 -mcpu=niagara
+ optflags: sparc64 %{__global_cflags} -m64 -mcpu=ultrasparc
++optflags: sparc64v %{__global_cflags} -m64 -mcpu=niagara
+ 
+ optflags: m68k %{__global_cflags}
+ 
+@@ -47,6 +49,7 @@
+ optflags: armv5tel %{__global_cflags} -march=armv5te
+ optflags: armv5tejl %{__global_cflags} -march=armv5te
+ optflags: armv6l %{__global_cflags} -march=armv6
++optflags: armv7l %{__global_cflags} -march=armv7
+ 
+ optflags: atarist %{__global_cflags}
+ optflags: atariste %{__global_cflags}
+@@ -56,7 +59,23 @@
+ optflags: milan %{__global_cflags}
+ optflags: hades %{__global_cflags}
+ 
+-optflags: s390 %{__global_cflags} -m31
+-optflags: s390x %{__global_cflags} -m64
++optflags: s390 %{__global_cflags} -m31 -march=z9-109 -mtune=z10
++optflags: s390x %{__global_cflags} -m64 -march=z9-109 -mtune=z10
++
++# set build arch to fedora buildarches on hardware capable of running it
++# saves having to do rpmbuild --target=
++buildarchtranslate: athlon: i586
++buildarchtranslate: geode: i586
++buildarchtranslate: pentium4: i586
++buildarchtranslate: pentium3: i586
++buildarchtranslate: i686: i586
++buildarchtranslate: i586: i586
++
++buildarchtranslate: sparcv9: sparcv9
++buildarchtranslate: sparcv9v: sparcv9
++
++buildarchtranslate: armv5tejl: armv5tel
++buildarchtranslate: armv6l: armv5tel
++buildarchtranslate: armv7l: armv5tel
+ 
+ macrofiles:     /usr/lib/rpm/macros:/usr/lib/rpm/%{_target}/macros:/usr/lib/rpm/redhat/macros:/etc/rpm/macros.*:/etc/rpm/macros:/etc/rpm/%{_target}/macros:~/.rpmmacros
